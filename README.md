@@ -30,7 +30,7 @@ Linguistic-specific parcellations are available for both Chinese and English lin
 - **Chinese**: parcellations optimized for individuals whose linguistic background is Chinese
 - **English**: parcellations designed for individuals whose linguistic background is English
 
-### Different L
+### 
 
 ## The correlation estimation between neural activities
 The tool uses a lightweight two-layer Multi-Layer Perceptron (MLP) model to estimate brain functional networks from fMRI time series data. This model is a distilled version of our personalized brain functional network construction, providing fast and accurate correlation estimation.
