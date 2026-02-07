@@ -9,7 +9,7 @@ Currently, pre-built brain parcellations covering diverse heterogeneous scenario
 ### Different age gourps
 ### Different brain disorder types
 ### Different data acquision stratigies
-### Different Languages
+### Different Linguistics
 
 ## The correlation estimation between neural activities
 
