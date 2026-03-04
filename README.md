@@ -57,8 +57,17 @@ The tool supports various visualization methods for functional brain networks:
 - **Network statistics**: Visualizes network metrics such as degree distribution and clustering coefficient
 - **Thresholding options**: Supports thresholding of connectivity matrices to focus on significant connections
 
-## Useage
-pip install git+https://github.com/jianghongjie328/A_Personalized_Brain_Functional_Network_Construction_Tool.git
+## Installation
+
+You can install the tool directly from GitHub:
+
+```bash
+pip install "git+https://github.com/jianghongjie328/A_Personalized_Brain_Functional_Network_Construction_Tool.git"
+```
+
+Make sure all required dependencies listed below are available in your environment.
+
+## Usage
 
 ### Basic Usage
 
@@ -118,6 +127,36 @@ tool.plot_network_statistics(correlation_matrix, "Network Statistics", "network_
 tool.plot_connectivity_histogram(correlation_matrix, "Connectivity Histogram", "connectivity_histogram.png")
 ```
 
+### Testing with the provided example data
+
+An example CIFTI dtseries file is provided in the `test_data` folder:
+
+- `test_data/sub-0012-gsp_run-01_DCANBOLDProc_v4.0.0_Atlas_resid.dtseries.nii`
+
+You can use it to run a simple end-to-end test with the PFBN distilled MLP estimator (200 ROIs: 100 per hemisphere):
+
+```python
+import numpy as np
+import nibabel as nib
+from correlation_estimator import PFBNMLPCorrelationEstimator
+
+path = "test_data/sub-0012-gsp_run-01_DCANBOLDProc_v4.0.0_Atlas_resid.dtseries.nii"
+img = nib.load(path)
+data = img.get_fdata()  # shape: (vertices, time_points)
+
+# For a quick smoke test, treat the first 200 vertices as 200 pseudo-ROIs
+num_rois = 200
+vertices, time_points = data.shape
+assert vertices >= num_rois
+fmri_data = data[:num_rois, :].astype(np.float32)
+
+estimator = PFBNMLPCorrelationEstimator(num_rois=num_rois)
+connectivity_matrix = estimator.estimate_correlation(fmri_data)
+print("Connectivity matrix shape:", connectivity_matrix.shape)
+```
+
+This demonstrates how to go from a dtseries file to a functional connectivity matrix using the distilled MLP.
+
 ## Dependencies
 The tool requires the following dependencies:
 - **Core libraries**: numpy, pandas, scipy, scikit-learn
@@ -127,3 +166,106 @@ The tool requires the following dependencies:
 - **Model related**: timm, tensorboardX
 - **Other**: PyYAML, tqdm, Pillow
 All dependencies are listed in `requirements.txt` and will be installed automatically when using pip.
+
+
+## PFBN distilled MLP correlation estimator
+
+In addition to the basic correlation estimator, this tool includes a distilled
+two-layer MLP that approximates the PFBN personalized functional connectivity
+module trained in our v1 framework. The distilled model is stored in
+`checkpoints/PFBN_Distilled_MLP.pth`.
+
+### Basic usage with the distilled MLP
+
+```python
+import numpy as np
+from correlation_estimator import PFBNMLPCorrelationEstimator
+
+# ROI-level fMRI time series with shape (num_rois, time_points)
+fmri_data = np.random.randn(200, 200)
+
+# Initialize the distilled PFBN MLP estimator (200 ROIs: 100 per hemisphere)
+estimator = PFBNMLPCorrelationEstimator(num_rois=200)
+
+# Estimate functional connectivity matrix
+correlation_matrix = estimator.estimate_correlation(fmri_data)
+print('Correlation matrix shape:', correlation_matrix.shape)
+```
+
+### Using the distilled MLP together with brain atlases
+
+You can also combine the distilled MLP with atlas-based parcellations. First
+aggregate vertex-level fMRI data into ROI time series using an atlas, then
+apply the PFBN MLP estimator:
+
+```python
+import numpy as np
+import nibabel as nib
+from atlas_manager import BrainAtlasManager
+from correlation_estimator import PFBNMLPCorrelationEstimator
+
+# Load an atlas (e.g., AD-specific atlas)
+atlas_manager = BrainAtlasManager()
+ad_atlas = atlas_manager.load_atlas('AD')
+
+# Simulated vertex-level fMRI data: (vertices, time_points)
+fmri_data = np.random.randn(64984, 200)
+
+# Initialize estimator (200 ROIs: 100 per hemisphere)
+estimator = PFBNMLPCorrelationEstimator(num_rois=200)
+
+# Compute parcellated functional connectivity matrix
+connectivity_matrix = estimator.compute_network_from_atlas(fmri_data, ad_atlas)
+print('Parcellated connectivity matrix shape:', connectivity_matrix.shape)
+```
+
+This distilled estimator provides a lightweight, deployment-friendly way to
+approximate PFBN-style functional connectivity on local machines.
+
+
+## PFBN distilled MLP correlation estimator
+
+In addition to the basic correlation estimator, this tool includes a distilled\ntwo-layer MLP that approximates the PFBN personalized functional connectivity\nmodule trained in our v1 framework. The distilled model is stored in\n`checkpoints/PFBN_Distilled_MLP.pth`.
+
+### Basic usage with the distilled MLP
+
+```python
+import numpy as np
+from correlation_estimator import PFBNMLPCorrelationEstimator
+
+# ROI-level fMRI time series with shape (num_rois, time_points)
+fmri_data = np.random.randn(90, 200)
+
+# Initialize the distilled PFBN MLP estimator
+estimator = PFBNMLPCorrelationEstimator()
+
+# Estimate functional connectivity matrix
+correlation_matrix = estimator.estimate_correlation(fmri_data)
+print('Correlation matrix shape:', correlation_matrix.shape)
+```
+
+### Using the distilled MLP together with brain atlases
+
+You can also combine the distilled MLP with atlas-based parcellations. First\naggregate vertex-level fMRI data into ROI time series using an atlas, then\napply the PFBN MLP estimator:
+
+```python
+import numpy as np
+from atlas_manager import BrainAtlasManager
+from correlation_estimator import PFBNMLPCorrelationEstimator
+
+# Load an atlas (e.g., AD-specific atlas)
+atlas_manager = BrainAtlasManager()
+ad_atlas = atlas_manager.load_atlas('AD')
+
+# Simulated vertex-level fMRI data: (vertices, time_points)
+fmri_data = np.random.randn(64984, 200)
+
+# Initialize estimator
+estimator = PFBNMLPCorrelationEstimator()
+
+# Compute parcellated functional connectivity matrix
+connectivity_matrix = estimator.compute_network_from_atlas(fmri_data, ad_atlas)
+print('Parcellated connectivity matrix shape:', connectivity_matrix.shape)
+```
+
+This distilled estimator provides a lightweight, deployment-friendly way to\napproximate PFBN-style functional connectivity on local machines.

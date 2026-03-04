@@ -253,3 +253,139 @@ class NeuralActivityCorrelationEstimator:
                 print(f"Error processing data: {e}")
                 results.append(None)
         return results
+
+
+class PFBNMLPCorrelationEstimator:
+    """Distilled PFBN two-layer MLP estimator.
+
+    This estimator uses the lightweight two-layer MLP (LightweightMLPCorrelation)
+    trained offline to approximate the PFBN personalized functional connectivity
+    module. It takes ROI-level fMRI time series as input and outputs an enhanced
+    functional connectivity matrix.
+    """
+
+    def __init__(self, model_path=None, num_rois: int = 200, hidden_size: int = 256):
+        import torch
+        from nilearn.connectome import ConnectivityMeasure
+
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.num_rois = num_rois
+        self.hidden_size = hidden_size
+
+        # Default to the distilled PFBN MLP checkpoint in the tool's checkpoints folder
+        default_ckpt = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'checkpoints',
+            'PFBN_Distilled_MLP.pth',
+        )
+        self.model_path = model_path or default_ckpt
+
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(f"Model checkpoint not found: {self.model_path}")
+
+        # Initialize lightweight MLP and load distilled weights
+        self.model = LightweightMLPCorrelation(
+            in_channels=self.num_rois,
+            hidden_size=self.hidden_size,
+            out_channels=self.num_rois,
+        ).to(self.device)
+
+        state_dict = torch.load(self.model_path, map_location=self.device)
+        self.model.load_state_dict(state_dict)
+        self.model.eval()
+
+        self.correlation_measure = ConnectivityMeasure(kind='correlation')
+
+        print(f"✅ PFBN distilled MLP estimator initialized (device: {self.device})")
+
+    def estimate_correlation(self, fmri_data):
+        """Estimate functional connectivity from ROI-level fMRI time series.
+
+        Args:
+            fmri_data (np.ndarray): fMRI time series data (vertices/ROIs × time)
+
+        Returns:
+            np.ndarray: Enhanced functional connectivity matrix (num_rois × num_rois)
+        """
+        import numpy as np
+        import torch
+
+        if fmri_data.ndim != 2:
+            raise ValueError(
+                f"Invalid input shape: expected 2D (vertices × time), got {fmri_data.shape}"
+            )
+
+        # Ensure the first dimension corresponds to ROIs if possible
+        if fmri_data.shape[0] != self.num_rois and fmri_data.shape[1] == self.num_rois:
+            fmri_data = fmri_data.T
+
+        if fmri_data.shape[0] != self.num_rois:
+            raise ValueError(
+                f"fmri_data should have shape (num_rois, time); got {fmri_data.shape}"
+            )
+
+        # Initial Pearson correlation matrix
+        correlation_matrix = self.correlation_measure.fit_transform([fmri_data.T])[0]
+        correlation_matrix = np.nan_to_num(correlation_matrix, nan=0.0)
+
+        # Convert to tensor and apply the distilled MLP (row-wise)
+        correlation_tensor = torch.tensor(
+            correlation_matrix, dtype=torch.float32, device=self.device
+        )
+
+        with torch.no_grad():
+            enhanced = self.model(correlation_tensor)
+            enhanced = enhanced.detach().cpu().numpy()
+
+        return enhanced
+
+    def compute_network_from_atlas(self, fmri_data, atlas):
+        """Compute functional brain network using a specific brain atlas.
+
+        This first aggregates vertex-level fMRI signals into ROI-level time series
+        using the atlas, then applies the distilled PFBN MLP estimator.
+        """
+        import numpy as np
+
+        # Extract atlas labels
+        atlas_data = atlas.get_fdata()
+        if atlas_data.ndim not in (3, 4):
+            raise ValueError(
+                f"Invalid atlas shape: expected 3D or 4D, got {atlas_data.shape}"
+            )
+
+        # Flatten atlas labels
+        atlas_labels = (
+            np.argmax(atlas_data, axis=-1) if atlas_data.ndim == 4 else atlas_data
+        )
+        atlas_labels = atlas_labels.flatten()
+
+        # Remove background and invalid labels
+        valid_mask = atlas_labels > 0
+        valid_labels = atlas_labels[valid_mask]
+        valid_fmri = fmri_data[valid_mask]
+
+        # Compute mean time series for each ROI
+        unique_labels = np.unique(valid_labels)
+        roi_time_series = []
+
+        for label in unique_labels:
+            roi_mask = valid_labels == label
+            roi_data = valid_fmri[roi_mask]
+            roi_mean = np.mean(roi_data, axis=0)
+            roi_time_series.append(roi_mean)
+
+        roi_time_series = np.array(roi_time_series)
+
+        return self.estimate_correlation(roi_time_series)
+
+    def compute_batch_correlation(self, fmri_dataset):
+        """Compute correlation matrices for a batch of fMRI datasets."""
+        results = []
+        for fmri_data in fmri_dataset:
+            try:
+                results.append(self.estimate_correlation(fmri_data))
+            except Exception as e:
+                print(f"Error processing data: {e}")
+                results.append(None)
+        return results
