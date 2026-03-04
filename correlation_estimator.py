@@ -205,12 +205,18 @@ class NeuralActivityCorrelationEstimator:
         """
         # Extract atlas labels
         atlas_data = atlas.get_fdata()
-        if atlas_data.ndim != 3 and atlas_data.ndim != 4:
-            raise ValueError(f"Invalid atlas shape: expected 3D or 4D, got {atlas_data.shape}")
 
-        # Flatten atlas labels
-        atlas_labels = np.argmax(atlas_data, axis=-1) if atlas_data.ndim == 4 else atlas_data
-        atlas_labels = atlas_labels.flatten()
+        # Support both volumetric atlases (3D/4D) and CIFTI dlabel-style vectors (1 x V or V x 1)
+        if atlas_data.ndim in (3, 4):
+            labels = np.argmax(atlas_data, axis=-1) if atlas_data.ndim == 4 else atlas_data
+            atlas_labels = labels.flatten()
+        elif atlas_data.ndim == 2 and 1 in atlas_data.shape:
+            # CIFTI dlabel: e.g. (1, 64984) or (64984, 1)
+            atlas_labels = atlas_data.reshape(-1)
+        else:
+            raise ValueError(
+                f"Invalid atlas shape: expected 3D/4D volume or 1D CIFTI vector, got {atlas_data.shape}"
+            )
 
         # Remove background and invalid labels
         valid_mask = atlas_labels > 0
@@ -349,16 +355,18 @@ class PFBNMLPCorrelationEstimator:
 
         # Extract atlas labels
         atlas_data = atlas.get_fdata()
-        if atlas_data.ndim not in (3, 4):
-            raise ValueError(
-                f"Invalid atlas shape: expected 3D or 4D, got {atlas_data.shape}"
-            )
 
-        # Flatten atlas labels
-        atlas_labels = (
-            np.argmax(atlas_data, axis=-1) if atlas_data.ndim == 4 else atlas_data
-        )
-        atlas_labels = atlas_labels.flatten()
+        # Support both volumetric atlases (3D/4D) and CIFTI dlabel-style vectors (1 x V or V x 1)
+        if atlas_data.ndim in (3, 4):
+            labels = np.argmax(atlas_data, axis=-1) if atlas_data.ndim == 4 else atlas_data
+            atlas_labels = labels.flatten()
+        elif atlas_data.ndim == 2 and 1 in atlas_data.shape:
+            # CIFTI dlabel: e.g. (1, 64984) or (64984, 1)
+            atlas_labels = atlas_data.reshape(-1)
+        else:
+            raise ValueError(
+                f"Invalid atlas shape: expected 3D/4D volume or 1D CIFTI vector, got {atlas_data.shape}"
+            )
 
         # Remove background and invalid labels
         valid_mask = atlas_labels > 0
